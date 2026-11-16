@@ -51,6 +51,7 @@ $routes->post('repartidores/actualizar', 'RepartidoresController::actualizar');
 $routes->get('repartidores/verificarEliminar/(:num)', 'RepartidoresController::verificarEliminar/$1');
 $routes->get('repartidores/eliminar/(:num)', 'RepartidoresController::eliminar/$1');
 $routes->get('repartidores/actualizaciones', 'RepartidoresController::actualizaciones');
+$routes->get('repartidores/ruta', 'RepartidoresController::ruta');
 $routes->post('repartidores/cambiar-estado', 'RepartidoresController::cambiarEstado');
 $routes->post('repartidores/tomar-pedido', 'RepartidoresController::tomarPedido');
 

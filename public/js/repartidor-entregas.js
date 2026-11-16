@@ -266,6 +266,7 @@ function cambiarVistaRep(vista) {
         document.getElementById('nav-rep-' + v)?.classList.toggle('active', v === vista);
     });
     document.getElementById('buscador-wrapper')?.classList.toggle('hidden', vista === 'perfil');
+    document.getElementById('panel-ruta')?.classList.toggle('hidden', vista !== 'asignados');
     // Móvil: mantener visible la opción activa del menú horizontal (RNF-07)
     document.getElementById('nav-rep-' + vista)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
 }
@@ -374,6 +375,7 @@ async function sincronizarPedidos(mostrarToastManual = false) {
 
         actualizarBadgesMenu(DATA_ASIGNADOS.length, DATA_DISPONIBLES.length);
         renderizarVistas();
+        if (window.cargarRutaRepartidor) window.cargarRutaRepartidor();
 
         const nuevos = DATA_DISPONIBLES.filter(p => !idsPrevios.has(p.id_pedido) && p.estado === 'confirmado').length;
         if (nuevos > 0 && !mostrarToastManual) {

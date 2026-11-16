@@ -88,6 +88,9 @@
                 </div>
             </div>
 
+            <!-- Ruta sugerida (Dijkstra): se llena desde js/repartidor-ruta.js y solo se ve en "Mis entregas" -->
+            <section id="panel-ruta" class="mb-6" aria-live="polite"></section>
+
             <!-- Contenedores dinámicos de cada sección -->
             <section id="sec-asignados" class="space-y-4" aria-live="polite"></section>
             <section id="sec-disponibles" class="space-y-4 hidden" aria-live="polite"></section>
@@ -140,5 +143,6 @@
         ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
     </script>
     <script src="<?= base_url('js/repartidor-entregas.js') ?>"></script>
+    <script src="<?= base_url('js/repartidor-ruta.js') ?>"></script>
 </body>
 </html>

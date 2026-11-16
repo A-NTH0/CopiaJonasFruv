@@ -147,8 +147,30 @@ class ClienteModel extends Model
     {
         $db = \Config\Database::connect();
         $db->table('direccion')->insert(
-            array_merge(['id_cliente' => $idCliente], $direccion)
+            array_merge(['id_cliente' => $idCliente], $direccion, $this->coordenadasDe($direccion))
         );
+    }
+
+    /**
+     * Obtiene latitud/longitud de la dirección (para las rutas con Dijkstra).
+     * Si el servicio de mapas falla no se interrumpe el registro: queda NULL
+     * y se reintenta después desde el portal del repartidor.
+     */
+    private function coordenadasDe(array $direccion): array
+    {
+        $geo = null;
+        try {
+            $geo = \App\Libraries\Geocoder::geocodificar($direccion);
+        } catch (\Throwable $e) {
+            log_message('error', 'No se pudo geocodificar la dirección: ' . $e->getMessage());
+        }
+
+        return [
+            'latitud'        => $geo['lat'] ?? null,
+            'longitud'       => $geo['lng'] ?? null,
+            'geo_precision'  => $geo['precision'] ?? null,
+            'geo_intento_at' => date('Y-m-d H:i:s'),
+        ];
     }
 
 
@@ -163,17 +185,28 @@ class ClienteModel extends Model
     public function actualizarDireccion(int $idCliente, array $direccion): void
     {
         $db     = \Config\Database::connect();
-        $existe = $db->table('direccion')
+        $actual = $db->table('direccion')
                      ->where('id_cliente', $idCliente)
-                     ->countAllResults();
+                     ->get()
+                     ->getRowArray();
 
-        if ($existe > 0) {
+        if ($actual !== null) {
+            // Solo se vuelve a geocodificar si la dirección cambió o aún no tiene coordenadas.
+            $cambio = false;
+            foreach (['calle', 'numero', 'colonia', 'municipio', 'estado'] as $campo) {
+                if (trim((string) ($direccion[$campo] ?? '')) !== trim((string) ($actual[$campo] ?? ''))) {
+                    $cambio = true;
+                    break;
+                }
+            }
+            $extra = ($cambio || $actual['latitud'] === null) ? $this->coordenadasDe($direccion) : [];
+
             $db->table('direccion')
                ->where('id_cliente', $idCliente)
-               ->update($direccion);
+               ->update($direccion + $extra);
         } else {
             $db->table('direccion')->insert(
-                array_merge(['id_cliente' => $idCliente], $direccion)
+                array_merge(['id_cliente' => $idCliente], $direccion, $this->coordenadasDe($direccion))
             );
         }
     }
