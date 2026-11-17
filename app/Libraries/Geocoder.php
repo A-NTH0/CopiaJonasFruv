@@ -8,6 +8,11 @@ namespace App\Libraries;
  * - Sin configuración usa Nominatim (OpenStreetMap): gratis y sin API key.
  * - Si en .env existe  google.mapsApiKey  usa la Geocoding API de Google.
  *
+ * SSL en local (XAMPP/WAMP): si cURL marca "SSL certificate problem", agrega en .env
+ *     geocoder.verifySsl = false
+ * (solo para desarrollo; en producción déjalo en true o configura curl.cainfo en php.ini).
+ * Opcional: geocoder.caBundle = C:/ruta/cacert.pem  para verificar con ese certificado.
+ *
  * Nunca lanza excepciones: si algo falla devuelve null y el registro del
  * cliente continúa normalmente (las coordenadas se reintentan después).
  */
@@ -65,6 +70,7 @@ class Geocoder
             'timeout'         => 5,
             'connect_timeout' => 3,
             'http_errors'     => false,
+            'verify'          => self::verificarSsl(),
         ]);
 
         $apiKey = trim((string) env('google.mapsApiKey', ''));
@@ -98,6 +104,20 @@ class Geocoder
         return isset($json[0]['lat'], $json[0]['lon'])
             ? ['lat' => (float) $json[0]['lat'], 'lng' => (float) $json[0]['lon']]
             : null;
+    }
+
+    /** @return bool|string true/false, o la ruta a un cacert.pem si se configuró geocoder.caBundle */
+    private static function verificarSsl()
+    {
+        $bundle = trim((string) env('geocoder.caBundle', ''));
+        if ($bundle !== '' && is_file($bundle)) {
+            return $bundle;
+        }
+
+        $valor = env('geocoder.verifySsl', true);
+        $bool  = filter_var($valor, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        return $bool ?? true;
     }
 
     private static function limpio($valor): string
