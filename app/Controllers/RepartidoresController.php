@@ -3,11 +3,16 @@ namespace App\Controllers;
 
 use App\Libraries\AccountCredentials;
 use App\Libraries\Geocoder;
+use App\Libraries\Matrices;
+use App\Libraries\Osrm;
 use App\Libraries\RutaDijkstra;
 use App\Models\RepartidorModel;
 
 class RepartidoresController extends BaseController
 {
+    /** Segundos que se espera para reintentar geocodificar una dirección que falló. */
+    private const GEO_REINTENTO_SEG = 1800;
+
     public function index()
     {
         if (session()->get('auth_role') === 'repartidor') {
@@ -91,8 +96,11 @@ class RepartidoresController extends BaseController
     }
 
     /**
-     * Ruta sugerida con Dijkstra para los pedidos activos del repartidor.
-     * Opcional: ?lat=&lng= (GPS del repartidor). Sin GPS, sale de la tienda (.env).
+     * Ruta más corta del repartidor hacia sus pedidos confirmados / en camino.
+     *
+     * Opcional: ?lat=&lng= (GPS del navegador). Sin GPS sale de la tienda (.env fruver.origenLat/Lng).
+     * Orden de visita: Dijkstra sobre la matriz de distancias por calle de OSRM (respaldo: línea recta).
+     * El trazo sobre las calles lo dibuja Leaflet en el navegador (public/js/repartidor-ruta.js).
      */
     public function ruta()
     {
@@ -104,10 +112,10 @@ class RepartidoresController extends BaseController
         $db           = db_connect();
 
         $filas = $db->query("
-            SELECT p.id_pedido,
+            SELECT p.id_pedido, p.fecha_entrega_programada, p.horario_entrega,
                    c.nombre, c.ap_paterno, c.ap_materno,
                    d.id_direccion, d.calle, d.numero, d.colonia, d.municipio, d.estado AS dir_estado,
-                   d.latitud, d.longitud, d.geo_intento_at,
+                   d.latitud, d.longitud, d.geo_precision, d.geo_intento_at,
                    (
                        SELECT s.estado FROM status s
                        WHERE s.id_pedido2 = p.id_pedido
@@ -137,9 +145,9 @@ class RepartidoresController extends BaseController
             if ($f['id_direccion'] === null || $f['latitud'] !== null || $geocodificadas >= 3) {
                 continue;
             }
-            $reciente = $f['geo_intento_at'] !== null && strtotime($f['geo_intento_at']) > time() - 86400;
+            $reciente = $f['geo_intento_at'] !== null && strtotime($f['geo_intento_at']) > time() - self::GEO_REINTENTO_SEG;
             if ($reciente) {
-                continue; // ya se intentó hoy y falló
+                continue; // ya se intentó hace poco y falló
             }
 
             $geocodificadas++;
@@ -154,8 +162,9 @@ class RepartidoresController extends BaseController
                 'geo_intento_at' => date('Y-m-d H:i:s'),
             ]);
             if ($geo !== null) {
-                $unicos[$id]['latitud']  = $geo['lat'];
-                $unicos[$id]['longitud'] = $geo['lng'];
+                $unicos[$id]['latitud']       = $geo['lat'];
+                $unicos[$id]['longitud']      = $geo['lng'];
+                $unicos[$id]['geo_precision'] = $geo['precision'];
             }
         }
 
@@ -180,6 +189,8 @@ class RepartidoresController extends BaseController
                 'estado'         => $f['estado_logistico'],
                 'lat'            => $f['latitud'] !== null ? (float) $f['latitud'] : null,
                 'lng'            => $f['longitud'] !== null ? (float) $f['longitud'] : null,
+                'precision'      => $f['geo_precision'],
+                'limite_ts'      => $this->horaLimite($f['fecha_entrega_programada'] ?? null, $f['horario_entrega'] ?? null),
             ];
         }
 
@@ -191,12 +202,52 @@ class RepartidoresController extends BaseController
             ? ['lat' => (float) $lat, 'lng' => (float) $lng]
             : ['lat' => (float) env('fruver.origenLat', 19.3139), 'lng' => (float) env('fruver.origenLng', -97.9206)];
 
+        // Orden de menor TIEMPO (Dijkstra sobre tiempos por calle; tráfico en vivo si hay API key de Google,
+        // hora pico estimada si no) respetando los horarios de entrega prometidos.
+        $plan = RutaDijkstra::planificarTodos($origen, $pedidos, static fn (array $p): ?array => Matrices::calcular($p));
+        $plan += ['trazo' => [], 'trazo_calles' => false];
+
+        if ($plan['hay_ruta']) {
+            $puntos = [$origen];
+            foreach ($plan['paradas'] as $p) {
+                $puntos[] = ['lat' => $p['lat'], 'lng' => $p['lng']];
+            }
+
+            // Trazo sobre las calles para dibujarlo en el mapa (OSRM); sin respuesta: líneas rectas.
+            $calle = Osrm::ruta($puntos);
+            if ($calle !== null) {
+                $plan['trazo']        = $calle['trazo'];
+                $plan['trazo_calles'] = true;
+            } else {
+                $plan['trazo'] = array_map(static fn (array $q): array => [$q['lat'], $q['lng']], $puntos);
+            }
+        }
+
         return $this->response->setJSON([
-            'ok'        => true,
+            'ok'         => true,
             'origen_gps' => $conGps,
-            'ruta'      => RutaDijkstra::planificar($origen, $pedidos),
-            'timestamp' => date('H:i:s'),
+            'ruta'       => $plan,
+            'timestamp'  => date('H:i:s'),
         ]);
+    }
+
+    /**
+     * Hora límite prometida (timestamp unix) a partir de fecha_entrega_programada + horario_entrega.
+     * Se interpreta en la zona horaria del negocio (fruver.timezone), no en UTC. Sin horario: null.
+     */
+    private function horaLimite($fecha, $horario): ?int
+    {
+        $fecha   = trim((string) $fecha);
+        $horario = trim((string) $horario);
+        if ($fecha === '' || $fecha === '0000-00-00' || $horario === '' || $horario === '00:00:00') {
+            return null;
+        }
+
+        try {
+            return (new \DateTimeImmutable($fecha . ' ' . $horario, RutaDijkstra::zona()))->getTimestamp();
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -363,6 +414,9 @@ class RepartidoresController extends BaseController
                 d.colonia,
                 d.municipio,
                 d.estado AS dir_estado,
+                d.latitud,
+                d.longitud,
+                d.geo_precision,
                 (
                     SELECT s.estado 
                     FROM status s 
@@ -376,7 +430,7 @@ class RepartidoresController extends BaseController
             LEFT JOIN direccion d ON d.id_cliente = c.id_cliente
             WHERE p.id_repartidor = ? 
                OR p.id_repartidor IS NULL
-            ORDER BY p.id_pedido DESC
+            ORDER BY p.id_pedido DESC, (d.latitud IS NULL) ASC, d.id_direccion ASC
         ";
 
         $rows = $db->query($sql, [$idRepartidor])->getResultArray();
@@ -462,6 +516,9 @@ class RepartidoresController extends BaseController
                 'cliente_telefono'         => preg_replace('/[^0-9]/', '', (string) ($p['cli_telefono'] ?? '')),
                 'direccion'                => $direccionCompleta,
                 'tiene_mapa'               => ! empty($partesDir),
+                'lat'                      => $p['latitud'] !== null ? (float) $p['latitud'] : null,
+                'lng'                      => $p['longitud'] !== null ? (float) $p['longitud'] : null,
+                'geo_precision'            => $p['geo_precision'],
                 'total'                    => $total,
                 'modalidad_pago'           => $modalidad,
                 'deuda_restante'           => $deudaRestante,

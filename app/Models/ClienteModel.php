@@ -143,11 +143,11 @@ class ClienteModel extends Model
         return $this;
     }
 
-    public function guardarDireccion(int $idCliente, array $direccion): void
+    public function guardarDireccion(int $idCliente, array $direccion, ?array $coordenadas = null): void
     {
         $db = \Config\Database::connect();
         $db->table('direccion')->insert(
-            array_merge(['id_cliente' => $idCliente], $direccion, $this->coordenadasDe($direccion))
+            array_merge(['id_cliente' => $idCliente], $direccion, $coordenadas ?? $this->coordenadasDe($direccion))
         );
     }
 
@@ -156,7 +156,7 @@ class ClienteModel extends Model
      * Si el servicio de mapas falla no se interrumpe el registro: queda NULL
      * y se reintenta después desde el portal del repartidor.
      */
-    private function coordenadasDe(array $direccion): array
+    public function coordenadasDe(array $direccion): array
     {
         $geo = null;
         try {

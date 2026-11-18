@@ -80,10 +80,16 @@ class Geocoder
                 'query' => ['address' => $texto, 'region' => 'mx', 'language' => 'es', 'key' => $apiKey],
             ]);
             if ($resp->getStatusCode() !== 200) {
+                log_message('error', 'Geocoder (Google) HTTP ' . $resp->getStatusCode());
+
                 return null;
             }
-            $json = json_decode((string) $resp->getBody(), true);
-            $loc  = $json['results'][0]['geometry']['location'] ?? null;
+            $json   = json_decode((string) $resp->getBody(), true);
+            $status = (string) ($json['status'] ?? '');
+            if (! in_array($status, ['OK', 'ZERO_RESULTS'], true)) {
+                log_message('error', 'Geocoder (Google): ' . $status . ' ' . ($json['error_message'] ?? ''));
+            }
+            $loc = $json['results'][0]['geometry']['location'] ?? null;
 
             return $loc ? ['lat' => (float) $loc['lat'], 'lng' => (float) $loc['lng']] : null;
         }
@@ -97,6 +103,8 @@ class Geocoder
             ],
         ]);
         if ($resp->getStatusCode() !== 200) {
+            log_message('error', 'Geocoder (Nominatim) HTTP ' . $resp->getStatusCode());
+
             return null;
         }
         $json = json_decode((string) $resp->getBody(), true);
@@ -107,7 +115,7 @@ class Geocoder
     }
 
     /** @return bool|string true/false, o la ruta a un cacert.pem si se configuró geocoder.caBundle */
-    private static function verificarSsl()
+    public static function verificarSsl()
     {
         $bundle = trim((string) env('geocoder.caBundle', ''));
         if ($bundle !== '' && is_file($bundle)) {

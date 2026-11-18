@@ -78,9 +78,12 @@ function crearTarjetaPedido(p, tipoSeccion) {
         ? `<span class="badge badge-amber">A Crédito · Saldo: ${formatoMoneda(p.deuda_restante)}</span>`
         : `<span class="badge badge-green">De Contado · ${formatoMoneda(p.total)}</span>`;
 
-    const linkMaps = p.tiene_mapa
-        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.direccion)}`
-        : null;
+    // Con coordenadas guardadas se navega a la latitud/longitud exacta; si no, se busca por texto.
+    const tieneCoord = p.lat != null && p.lng != null;
+    const linkMaps = tieneCoord
+        ? `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`
+        : (p.tiene_mapa ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.direccion)}` : null);
+    const enRuta = tipoSeccion === 'asignados' && tieneCoord && ['confirmado', 'en_transito'].includes(p.estado);
     const linkWA = armarLinkWhatsApp(p);
 
     const prodsHtml = (p.productos || []).map(pr => `
@@ -189,8 +192,15 @@ function crearTarjetaPedido(p, tipoSeccion) {
             ${linkMaps ? `
                 <a href="${linkMaps}" target="_blank" rel="noopener"
                    class="rep-action-btn bg-white hover:bg-gray-50 text-gray-800 border border-gray-300">
-                    <i data-lucide="map" class="w-4 h-4 text-rose-600"></i> Ver en Mapa
+                    <i data-lucide="map" class="w-4 h-4 text-rose-600"></i> ${tieneCoord ? 'Cómo llegar' : 'Ver en Mapa'}
                 </a>
+            ` : ''}
+
+            ${enRuta ? `
+                <button type="button" onclick="rutaEnfocarPedido(${p.id_pedido})"
+                        class="rep-action-btn bg-white hover:bg-gray-50 text-gray-800 border border-gray-300">
+                    <i data-lucide="route" class="w-4 h-4 text-rose-600"></i> Ver en mapa de ruta
+                </button>
             ` : ''}
 
             ${p.cliente_telefono ? `
@@ -267,6 +277,7 @@ function cambiarVistaRep(vista) {
     });
     document.getElementById('buscador-wrapper')?.classList.toggle('hidden', vista === 'perfil');
     document.getElementById('panel-ruta')?.classList.toggle('hidden', vista !== 'asignados');
+    if (vista === 'asignados' && window.rutaRefrescarMapa) window.rutaRefrescarMapa(); // Leaflet necesita recalcular tamaño al mostrarse
     // Móvil: mantener visible la opción activa del menú horizontal (RNF-07)
     document.getElementById('nav-rep-' + vista)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
 }

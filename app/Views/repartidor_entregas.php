@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fruver - Portal de Repartidor</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -88,8 +89,31 @@
                 </div>
             </div>
 
-            <!-- Ruta sugerida (Dijkstra): se llena desde js/repartidor-ruta.js y solo se ve en "Mis entregas" -->
-            <section id="panel-ruta" class="mb-6" aria-live="polite"></section>
+            <!-- Mapa y ruta más corta (Leaflet + OSRM): se llena desde js/repartidor-ruta.js y solo se ve en "Mis entregas" -->
+            <section id="panel-ruta" class="mb-6" aria-live="polite">
+                <div class="rounded-2xl border border-rose-200 bg-white p-4 shadow-sm">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h2 class="text-base font-extrabold text-gray-900">Ruta más corta</h2>
+                            <p id="ruta-resumen" class="text-xs text-gray-600">Calculando tu ruta…</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="button" id="btn-recalcular-ruta"
+                                    class="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:border-rose-300 hover:text-rose-600">
+                                Recalcular desde mi ubicación
+                            </button>
+                            <a id="btn-google-maps" href="#" target="_blank" rel="noopener noreferrer"
+                               class="hidden rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700">
+                                Navegar en Google Maps
+                            </a>
+                        </div>
+                    </div>
+                    <p id="ruta-aviso" class="hidden mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"></p>
+                    <div id="mapa-ruta" class="ruta-mapa hidden mt-3" role="application" aria-label="Mapa con la ruta más corta de tus entregas"></div>
+                    <ol id="ruta-paradas" class="mt-3 divide-y divide-gray-100"></ol>
+                    <p id="ruta-notas" class="mt-2 text-[11px] text-gray-500"></p>
+                </div>
+            </section>
 
             <!-- Contenedores dinámicos de cada sección -->
             <section id="sec-asignados" class="space-y-4" aria-live="polite"></section>
@@ -134,6 +158,7 @@
 
     <script>
         const BASE_URL = '<?= rtrim(base_url(), '/') ?>/';
+        const TIENDA_COORD = <?= json_encode(['lat' => (float) env('fruver.origenLat', 19.3139), 'lng' => (float) env('fruver.origenLng', -97.9206)]) ?>;
         const REPARTIDOR_INICIAL = <?= json_encode([
             'vistaInicial' => $vistaInicial,
             'firmaEstado'  => $firmaEstado,
@@ -142,6 +167,7 @@
             'entregados'   => $entregados,
         ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
     </script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="<?= base_url('js/repartidor-entregas.js') ?>"></script>
     <script src="<?= base_url('js/repartidor-ruta.js') ?>"></script>
 </body>

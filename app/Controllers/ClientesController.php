@@ -339,9 +339,20 @@ class ClientesController extends BaseController
             return redirect()->back()->withInput()->with('error', $emailConfigurationError);
         }
 
-        $password = AccountCredentials::generatePassword();
-        $model = new ClienteModel();
-        $db    = db_connect();
+        $password  = AccountCredentials::generatePassword();
+        $model     = new ClienteModel();
+        $direccion = [
+            'calle'     => $this->request->getPost('calle'),
+            'numero'    => $this->request->getPost('numero'),
+            'colonia'   => $this->request->getPost('colonia'),
+            'municipio' => $this->request->getPost('municipio'),
+            'estado'    => $this->request->getPost('estado'),
+        ];
+        // La llamada HTTP al geocodificador puede tardar varios segundos: se hace
+        // ANTES de abrir la transacción para no mantener bloqueada la tabla cliente.
+        $coordenadas = $model->coordenadasDe($direccion);
+
+        $db = db_connect();
         $db->transBegin();
 
         $idCliente = $model->insert([
@@ -355,13 +366,7 @@ class ClientesController extends BaseController
             return redirect()->back()->withInput()->with('error', 'No se pudo guardar el cliente.');
         }
 
-        $model->guardarDireccion($idCliente, [
-            'calle'     => $this->request->getPost('calle'),
-            'numero'    => $this->request->getPost('numero'),
-            'colonia'   => $this->request->getPost('colonia'),
-            'municipio' => $this->request->getPost('municipio'),
-            'estado'    => $this->request->getPost('estado'),
-        ]);
+        $model->guardarDireccion($idCliente, $direccion, $coordenadas);
 
         $nombre = trim($input['nombre'] . ' ' . $input['ap_paterno'] . ' ' . $input['ap_materno']);
         if (! $db->transStatus() || ! AccountCredentials::sendPassword($input['email'], $nombre, 'cliente', $password)) {
